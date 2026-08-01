@@ -6,13 +6,14 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { doc, onSnapshot, updateDoc, setDoc } from "firebase/firestore";
-import { signOut } from "firebase/auth";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { getMyStats, updateMyProfile } from "../services/statsService";
+import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 
 export default function ProfileScreen({ navigation }) {
   const { colors, typography } = useTheme();
+  const { logout } = useAuth();
   const [stats, setStats] = useState(null);
   const [playerName, setPlayerName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -27,18 +28,13 @@ export default function ProfileScreen({ navigation }) {
       return;
     }
 
-    const unsub = onSnapshot(doc(db, "user_stats", myUid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
+    getMyStats()
+      .then((data) => {
         setStats(data);
-        setPlayerName(data.playerName || data.name || userEmail.split("@")[0]);
-      } else {
-        setPlayerName(userEmail.split("@")[0]);
-      }
-      setLoading(false);
-    });
-
-    return () => unsub();
+        setPlayerName(data.playerName || userEmail.split("@")[0]);
+      })
+      .catch(() => setPlayerName(userEmail.split("@")[0]))
+      .finally(() => setLoading(false));
   }, [myUid]);
 
   const handleSave = async () => {
@@ -50,11 +46,8 @@ export default function ProfileScreen({ navigation }) {
 
     setSaving(true);
     try {
-      const statsRef = doc(db, "user_stats", myUid);
-      await setDoc(statsRef, {
-        playerName: cleanName,
-        name: cleanName
-      }, { merge: true });
+      const updated = await updateMyProfile(cleanName);
+      setStats(updated);
 
       Alert.alert("Success", "Gaming name updated successfully!");
     } catch (e) {
@@ -77,7 +70,7 @@ export default function ProfileScreen({ navigation }) {
           text: "OK",
           onPress: async () => {
             try {
-              await signOut(auth);
+              await logout();
             } catch (e) {
               console.log(e);
               Alert.alert("Error", `Failed to logout: ${e.message}`);

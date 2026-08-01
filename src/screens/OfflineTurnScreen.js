@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Text, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
 
@@ -31,12 +31,11 @@ export default function OfflineTurnScreen({ route, navigation }) {
     );
   };
 
-  // Listen to Firestore for active turns and screen transition
+  // Listen for active turns and screen transition
   useEffect(() => {
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (!data) return;
       setDbRoom(data);
 
       if (data.gameStatus === "offline_round_end") {
@@ -54,7 +53,7 @@ export default function OfflineTurnScreen({ route, navigation }) {
         });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode]);
 
   const turnOrder = dbRoom?.turnOrder || initialTurnOrder || [];
@@ -74,13 +73,13 @@ export default function OfflineTurnScreen({ route, navigation }) {
     setPassing(true);
     try {
       if (isLast) {
-        // Round ends — update Firestore state
-        await updateDoc(doc(db, "rooms", roomCode), {
+        // Round ends
+        await updateRoom(roomCode, {
           gameStatus: "offline_round_end",
         });
       } else {
-        // Move to next player in Firestore
-        await updateDoc(doc(db, "rooms", roomCode), {
+        // Move to next player
+        await updateRoom(roomCode, {
           currentTurnIndex: turnIndex + 1,
           turnStartedAt: Date.now(),
         });
@@ -96,11 +95,11 @@ export default function OfflineTurnScreen({ route, navigation }) {
     if (passing) return;
     try {
       if (isLast) {
-        await updateDoc(doc(db, "rooms", roomCode), {
+        await updateRoom(roomCode, {
           gameStatus: "offline_round_end",
         });
       } else {
-        await updateDoc(doc(db, "rooms", roomCode), {
+        await updateRoom(roomCode, {
           currentTurnIndex: turnIndex + 1,
           turnStartedAt: Date.now(),
         });

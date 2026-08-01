@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Text, TouchableOpacity, SafeAreaView, ScrollView, Animated, ActivityIndicator, Alert, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc, deleteDoc, getDoc, setDoc } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
 import { saveUserScoreToHistory } from "../services/statsService";
@@ -28,15 +28,14 @@ export default function OfflineResultScreen({ route, navigation }) {
   const myUid = auth.currentUser?.uid || "guest";
   const recordedGamesRef = useRef([]);
 
-  // Listen to Firestore for play again resets
+  // Listen for play again resets
   useEffect(() => {
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), (snap) => {
-      if (!snap.exists()) {
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (!data) {
         navigation.navigate("Home");
         return;
       }
-      const data = snap.data();
       setDbRoom(data);
 
       if (data.gameStatus === "waiting") {
@@ -44,7 +43,7 @@ export default function OfflineResultScreen({ route, navigation }) {
         navigation.navigate("Home");
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode]);
 
   const finalScores = dbRoom?.scores || scores || {};
@@ -85,7 +84,7 @@ export default function OfflineResultScreen({ route, navigation }) {
     setLoading(true);
     try {
       // Disband or reset room to waiting
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         gameStatus: "waiting",
         readyPlayers: [],
         votes: {},

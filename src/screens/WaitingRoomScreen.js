@@ -6,8 +6,9 @@ import {
 import QRCode from "react-native-qrcode-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc, getDoc } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { getUserStatsById } from "../services/statsService";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { generateTopic } from "../services/generateTopic";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
@@ -29,45 +30,42 @@ export default function WaitingRoomScreen({ route, navigation }) {
       return;
     }
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), async (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setRoomData(data);
-        const playersList = data.players || data.playerList || [];
-
-        // Enrich each player's name from user_stats so gaming tags always show
-        const enriched = await Promise.all(
-          playersList.map(async (p) => {
-            try {
-              const statSnap = await getDoc(doc(db, "user_stats", p.uid));
-              if (statSnap.exists()) {
-                const sd = statSnap.data();
-                const gTag = sd.playerName || sd.name;
-                if (gTag) return { ...p, name: gTag };
-              }
-            } catch (_) { }
-            return p;
-          })
-        );
-
-        setJoinedPlayers(enriched);
-        if (data.selectedTopic !== undefined) {
-          setSelectedTopic(data.selectedTopic);
-        }
-        if (data.gameStatus === "reveal" || data.gameStatus === "round" || (data.started && data.topic)) {
-          navigation.navigate("GamePlay", {
-            roomCode,
-            course: data.category || data.course || course,
-            isHost,
-            isDemoMode: false,
-          });
-        }
-      } else {
+    const unsub = subscribeToRoom(roomCode, async (data) => {
+      if (!data) {
         Alert.alert("Error", "Room was disbanded.");
         navigation.navigate("Home");
+        return;
+      }
+
+      setRoomData(data);
+      const playersList = data.players || data.playerList || [];
+
+      // Enrich each player's name from user_stats so gaming tags always show
+      const enriched = await Promise.all(
+        playersList.map(async (p) => {
+          try {
+            const sd = await getUserStatsById(p.uid);
+            const gTag = sd.playerName || sd.name;
+            if (gTag) return { ...p, name: gTag };
+          } catch (_) { }
+          return p;
+        })
+      );
+
+      setJoinedPlayers(enriched);
+      if (data.selectedTopic !== undefined) {
+        setSelectedTopic(data.selectedTopic);
+      }
+      if (data.gameStatus === "reveal" || data.gameStatus === "round" || (data.started && data.topic)) {
+        navigation.navigate("GamePlay", {
+          roomCode,
+          course: data.category || data.course || course,
+          isHost,
+          isDemoMode: false,
+        });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode, isDemoMode]);
 
   const handleStart = async () => {
@@ -113,18 +111,15 @@ export default function WaitingRoomScreen({ route, navigation }) {
         const enrichedPlayers = await Promise.all(
           joinedPlayers.map(async (p) => {
             try {
-              const snap = await getDoc(doc(db, "user_stats", p.uid));
-              if (snap.exists()) {
-                const data = snap.data();
-                const gamingName = data.playerName || data.name;
-                if (gamingName) return { ...p, name: gamingName };
-              }
+              const data = await getUserStatsById(p.uid);
+              const gamingName = data.playerName || data.name;
+              if (gamingName) return { ...p, name: gamingName };
             } catch (_) { }
             return p;
           })
         );
 
-        await updateDoc(doc(db, "rooms", roomCode), {
+        await updateRoom(roomCode, {
           started: true,
           gameStatus: "reveal",
           readyPlayers: [],

@@ -5,8 +5,8 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { subscribeToRoom, updateRoom, arrayUnion } from "../services/roomService";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
 
@@ -64,9 +64,8 @@ export default function OfflineRoleRevealScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), async (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (!data) return;
       setDbRoom(data);
       const rPlayers = data.readyPlayers || [];
       setReady(rPlayers.includes(currentUid));
@@ -85,7 +84,7 @@ export default function OfflineRoleRevealScreen({ route, navigation }) {
         });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode]);
 
   useEffect(() => {
@@ -96,7 +95,7 @@ export default function OfflineRoleRevealScreen({ route, navigation }) {
       const startTurns = async () => {
         try {
           const shuffledUids = [...allPlayers].sort(() => Math.random() - 0.5).map(p => p.uid);
-          await updateDoc(doc(db, "rooms", roomCode), {
+          await updateRoom(roomCode, {
             gameStatus: "offline_turn",
             turnOrder: shuffledUids,
             currentTurnIndex: 0,
@@ -113,7 +112,7 @@ export default function OfflineRoleRevealScreen({ route, navigation }) {
     if (ready || loadingReady) return;
     setLoadingReady(true);
     try {
-      await updateDoc(doc(db, "rooms", roomCode), { readyPlayers: arrayUnion(currentUid) });
+      await updateRoom(roomCode, { readyPlayers: arrayUnion(currentUid) });
       setReady(true);
     } catch (e) {
       Alert.alert("Error", `Failed to set ready: ${e.message}`);

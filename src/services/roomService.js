@@ -1,116 +1,78 @@
-import { doc, runTransaction, arrayUnion } from "firebase/firestore";
-import { db } from "../firebase/firebase";
+import { api } from "../api/client";
+import { getSocket } from "../api/socket";
 
+// Sentinels mirroring Firestore's arrayUnion()/deleteField(), kept so
+// updateRoom() call sites read exactly like the old updateDoc() calls.
+const ARRAY_UNION = "__arrayUnion";
+const DELETE_FIELD = "__deleteField";
 
-// Ensure this is called within a React component or hook context
+export const arrayUnion = (value) => ({ __op: ARRAY_UNION, value });
+export const deleteField = () => ({ __op: DELETE_FIELD });
+
 /**
- * Creates a multiplayer room with collision checking on the generated 6-character room code.
+ * Creates a multiplayer room. The server generates the unique room code.
  */
 export const createRoomAtomic = async (roomData) => {
-  let attempts = 0;
-  const maxAttempts = 5;
-
-  while (attempts < maxAttempts) {
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const roomRef = doc(db, "rooms", roomCode);
-
-    try {
-      const success = await runTransaction(db, async (transaction) => {
-        const roomSnap = await transaction.get(roomRef);
-        if (roomSnap.exists()) {
-          // Code collision detected, return false to retry in next loop iteration
-          return false;
-        }
-
-        // Write the room configuration atomically
-        transaction.set(roomRef, {
-          ...roomData,
-          roomCode
-        });
-        return roomCode;
-      });
-
-      if (success) {
-        return success; // Returns the generated roomCode
-      }
-    } catch (e) {
-      console.error("Error creating room atomically:", e);
-      throw e;
-    }
-
-    attempts++;
-  }
-  throw new Error("Failed to generate a unique room code. Please try again.");
+  const room = await api.post("/rooms", roomData);
+  return room.roomCode;
 };
 
 /**
- * Joins a room atomically, verifying capacity and checking entry fee balance in a single transaction.
+ * Joins a room, verifying capacity and entry-fee balance server-side.
  */
-export const joinRoomAtomic = async (roomCode, myUid, emailPrefix) => {
-  const roomRef = doc(db, "rooms", roomCode);
-  const statsRef = doc(db, "user_stats", myUid);
+export const joinRoomAtomic = async (roomCode) => {
+  return api.post(`/rooms/${roomCode}/join`, {});
+};
 
-  return await runTransaction(db, async (transaction) => {
-    const roomSnap = await transaction.get(roomRef);
-    if (!roomSnap.exists()) {
-      throw new Error("ROOM_NOT_FOUND");
-    }
+export const getRoom = async (roomCode) => {
+  return api.get(`/rooms/${roomCode}`);
+};
 
-    const roomData = roomSnap.data();
-    const playersList = roomData.players || [];
-    const capacity = roomData.playersRequired || 4;
+/**
+ * Firestore updateDoc()-style partial update: plain values are merged,
+ * arrayUnion(value) appends without duplicating, deleteField() drops the key.
+ */
+export const updateRoom = async (roomCode, updates) => {
+  const set = {};
+  const arrayUnionFields = {};
+  const unset = [];
 
-    // Check if user has sufficient coins for the room entry fee
-    const statsSnap = await transaction.get(statsRef);
-    let joinPlayerName = emailPrefix;
-    const requiredCoins = roomData.bettingAmount !== undefined ? roomData.bettingAmount : 50;
-
-    if (statsSnap.exists()) {
-      const statsData = statsSnap.data();
-      const scoreVal = statsData.highScore || 0;
-      if (scoreVal < requiredCoins) {
-        throw new Error(`INSUFFICIENT_COINS:${requiredCoins}`);
-      }
-      joinPlayerName = statsData.playerName || statsData.name || emailPrefix;
+  for (const [key, value] of Object.entries(updates)) {
+    if (value && typeof value === "object" && value.__op === ARRAY_UNION) {
+      arrayUnionFields[key] = value.value;
+    } else if (value && typeof value === "object" && value.__op === DELETE_FIELD) {
+      unset.push(key);
     } else {
-      if (requiredCoins > 0) {
-        throw new Error(`INSUFFICIENT_COINS:${requiredCoins}`);
-      }
+      set[key] = value;
     }
+  }
 
-    const alreadyInRoom = playersList.some((p) => p.uid === myUid);
+  return api.patch(`/rooms/${roomCode}`, { set, arrayUnion: arrayUnionFields, unset });
+};
 
-    if (!alreadyInRoom && playersList.length >= capacity) {
-      throw new Error("ROOM_FULL");
-    }
+/**
+ * Subscribes to realtime updates for a room (replaces Firestore onSnapshot).
+ * Fires immediately with the current room state, then again on every change.
+ * Returns an unsubscribe function.
+ */
+export const subscribeToRoom = (roomCode, callback) => {
+  let active = true;
+  const socket = getSocket();
 
-    const playerObj = { uid: myUid, name: joinPlayerName, score: 0 };
+  const handleUpdate = (room) => {
+    if (active && room && room.roomCode === roomCode) callback(room);
+  };
 
-    if (alreadyInRoom) {
-      // Update their display name if it changed
-      const updatedPlayers = playersList.map(p =>
-        p.uid === myUid ? { ...p, name: joinPlayerName } : p
-      );
-      transaction.update(roomRef, {
-        players: updatedPlayers
-      });
-    } else {
-      // Append the new player atomically
-      transaction.update(roomRef, {
-        players: arrayUnion(playerObj),
-        playerList: arrayUnion({ uid: myUid, name: joinPlayerName })
-      });
-    }
+  socket.emit("joinRoomChannel", roomCode);
+  socket.on("roomUpdated", handleUpdate);
 
-    return {
-      category: roomData.category || roomData.course,
-      playersRequired: capacity,
-      hostId: roomData.hostId,
-      gameMode: roomData.gameMode,
-      totalRounds: roomData.totalRounds || 3,
-      selectedTopic: roomData.selectedTopic || null,
-      bettingAmount: requiredCoins,
-      clueTimer: roomData.clueTimer !== undefined ? roomData.clueTimer : 0
-    };
-  });
+  getRoom(roomCode)
+    .then((room) => { if (active) callback(room); })
+    .catch((err) => console.error("Error fetching room:", err));
+
+  return () => {
+    active = false;
+    socket.off("roomUpdated", handleUpdate);
+    socket.emit("leaveRoomChannel", roomCode);
+  };
 };

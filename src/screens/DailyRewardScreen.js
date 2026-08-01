@@ -6,10 +6,9 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { TreasureChestIcon } from "phosphor-react-native";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
 import { useTheme } from "../context/ThemeContext";
-import { claimDailyReward } from "../services/statsService";
+import { claimDailyReward, getMyStats } from "../services/statsService";
 import { scheduleDailyRewardNotification } from "../services/notificationService";
 
 const { width } = Dimensions.get("window");
@@ -27,19 +26,15 @@ export default function DailyRewardScreen({ navigation }) {
   const myUid = auth.currentUser?.uid || "guest";
   const dayInMs = 24 * 60 * 60 * 1000;
 
-  // 1. Listen to user stats
+  // 1. Load user stats
   useEffect(() => {
     if (myUid === "guest") {
       setLoading(false);
       return;
     }
-    const unsub = onSnapshot(doc(db, "user_stats", myUid), (snap) => {
-      if (snap.exists()) {
-        setStats(snap.data());
-      }
-      setLoading(false);
-    });
-    return () => unsub();
+    getMyStats()
+      .then(setStats)
+      .finally(() => setLoading(false));
   }, [myUid]);
 
 
@@ -126,9 +121,8 @@ export default function DailyRewardScreen({ navigation }) {
     setClaiming(true);
 
     try {
-      const emailPrefix = auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Player";
-      const nameVal = stats?.playerName || stats?.name || emailPrefix;
-      await claimDailyReward(myUid, nameVal);
+      const updated = await claimDailyReward(myUid);
+      setStats(updated);
       await scheduleDailyRewardNotification(86400);
 
       Alert.alert("Success", "Reward unlocked! +500 coins added to your balance.");

@@ -5,8 +5,8 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc, arrayUnion, getDoc, setDoc, deleteField } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { subscribeToRoom, updateRoom, arrayUnion, deleteField } from "../services/roomService";
 import { generateTopic } from "../services/generateTopic";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
@@ -53,9 +53,8 @@ export default function GamePlayScreen({ route, navigation }) {
       return;
     }
 
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (data) {
         setRoomData(data);
         setLoading(false);
 
@@ -65,7 +64,7 @@ export default function GamePlayScreen({ route, navigation }) {
           const totalPlayers = data.players || [];
           const readyList = data.readyPlayers || [];
           if (totalPlayers.length > 0 && readyList.length >= totalPlayers.length) {
-            updateDoc(doc(db, "rooms", roomCode), {
+            updateRoom(roomCode, {
               gameStatus: "round",
               readyPlayers: [], // reset
             }).catch(err => console.log("Failed to transition to round:", err));
@@ -77,7 +76,7 @@ export default function GamePlayScreen({ route, navigation }) {
           const totalPlayers = data.players || [];
           const votesMap = data.votes || {};
           if (totalPlayers.length > 0 && Object.keys(votesMap).length >= totalPlayers.length) {
-            updateDoc(doc(db, "rooms", roomCode), {
+            updateRoom(roomCode, {
               gameStatus: "results",
             }).catch(err => console.log("Failed to transition to results:", err));
           }
@@ -112,7 +111,7 @@ export default function GamePlayScreen({ route, navigation }) {
           const currentTurnIndex = roundHints.length;
           if (currentTurnIndex < (data.players || []).length) {
             if (data.turnIndex !== currentTurnIndex) {
-              updateDoc(doc(db, "rooms", roomCode), {
+              updateRoom(roomCode, {
                 turnIndex: currentTurnIndex,
                 turnStartedAt: Date.now()
               }).catch(err => console.log("Failed to set turnIndex/turnStartedAt:", err));
@@ -125,7 +124,7 @@ export default function GamePlayScreen({ route, navigation }) {
       }
     });
 
-    return () => unsub();
+    return unsub;
   }, [roomCode, isHost]);
 
   // Clue Turn Timer Ticker
@@ -153,7 +152,7 @@ export default function GamePlayScreen({ route, navigation }) {
         const isMyTurn = totalPlayersList[currentTurnIndex]?.uid === myUid;
         if (isMyTurn) {
           const myPlayerName = totalPlayersList.find(p => p.uid === myUid)?.name || "You";
-          updateDoc(doc(db, "rooms", roomCode), {
+          updateRoom(roomCode, {
             hints: arrayUnion({
               round: roomData.currentRound || 1,
               uid: myUid,
@@ -164,7 +163,7 @@ export default function GamePlayScreen({ route, navigation }) {
         } else if (isHost && elapsed >= limit + 3) {
           const targetPlayer = totalPlayersList[currentTurnIndex];
           if (targetPlayer) {
-            updateDoc(doc(db, "rooms", roomCode), {
+            updateRoom(roomCode, {
               hints: arrayUnion({
                 round: roomData.currentRound || 1,
                 uid: targetPlayer.uid,
@@ -212,7 +211,7 @@ export default function GamePlayScreen({ route, navigation }) {
   const handleConfirmRole = async () => {
     setSubmitting(true);
     try {
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         readyPlayers: arrayUnion(myUid)
       });
     } catch (e) {
@@ -236,7 +235,7 @@ export default function GamePlayScreen({ route, navigation }) {
 
     setSubmitting(true);
     try {
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         hints: arrayUnion({
           round: currentRound,
           uid: myUid,
@@ -257,11 +256,11 @@ export default function GamePlayScreen({ route, navigation }) {
     setSubmitting(true);
     try {
       if (currentRound < totalRounds && !endEarly) {
-        await updateDoc(doc(db, "rooms", roomCode), {
+        await updateRoom(roomCode, {
           currentRound: currentRound + 1
         });
       } else {
-        await updateDoc(doc(db, "rooms", roomCode), {
+        await updateRoom(roomCode, {
           gameStatus: "voting"
         });
       }
@@ -281,7 +280,7 @@ export default function GamePlayScreen({ route, navigation }) {
 
     setSubmitting(true);
     try {
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         [`votes.${myUid}`]: selectedVoteUid
       });
     } catch (e) {
@@ -366,7 +365,7 @@ export default function GamePlayScreen({ route, navigation }) {
         };
       });
 
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         players: updatedPlayers,
         gameStatus: "leaderboard",
         imposterGuess: cleanGuess,
@@ -396,7 +395,7 @@ export default function GamePlayScreen({ route, navigation }) {
         score: 0
       }));
 
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         gameStatus: "reveal",
         currentRound: 1,
         players: resetPlayers,

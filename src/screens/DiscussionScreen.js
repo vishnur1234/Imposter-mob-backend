@@ -5,8 +5,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { db } from "../firebase/firebase";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { generateTopic } from "../services/generateTopic";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
@@ -26,20 +25,17 @@ export default function DiscussionScreen({ route, navigation }) {
 
   useEffect(() => {
     if (isDemoMode || !roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.started && data.gameId && data.gameId !== initialGameId) {
-          navigation.navigate("RoleReveal", {
-            roomCode, course: data.course || course,
-            players: Array.isArray(data.playerList) ? data.playerList : [],
-            topic: data.topic, imposterIndex: data.imposterIndex ?? 0,
-            isHost, isDemoMode: false, gameId: data.gameId,
-          });
-        }
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (data && data.started && data.gameId && data.gameId !== initialGameId) {
+        navigation.navigate("RoleReveal", {
+          roomCode, course: data.course || course,
+          players: Array.isArray(data.playerList) ? data.playerList : [],
+          topic: data.topic, imposterIndex: data.imposterIndex ?? 0,
+          isHost, isDemoMode: false, gameId: data.gameId,
+        });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode, isDemoMode, initialGameId]);
 
   const handleRestart = async () => {
@@ -58,7 +54,7 @@ export default function DiscussionScreen({ route, navigation }) {
           imposterIndex: newImposter, isHost: true, isDemoMode: !!isDemoMode, gameId: nextId,
         });
       } else {
-        await updateDoc(doc(db, "rooms", roomCode), { topic: newTopic, imposterIndex: newImposter, gameId: nextId });
+        await updateRoom(roomCode, { topic: newTopic, imposterIndex: newImposter, gameId: nextId });
       }
     } catch (e) {
       Alert.alert("Error", "Failed to generate new topic.");

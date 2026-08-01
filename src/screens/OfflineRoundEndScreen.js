@@ -2,8 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Text, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
 
@@ -28,12 +27,11 @@ export default function OfflineRoundEndScreen({ route, navigation }) {
     );
   };
 
-  // Listen to Firestore for transitions
+  // Listen for transitions
   useEffect(() => {
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (!data) return;
       setDbRoom(data);
 
       if (data.gameStatus === "offline_turn") {
@@ -61,7 +59,7 @@ export default function OfflineRoundEndScreen({ route, navigation }) {
         });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode]);
 
   const roundNumber = dbRoom?.currentRound ?? initialRoundNumber ?? 1;
@@ -79,7 +77,7 @@ export default function OfflineRoundEndScreen({ route, navigation }) {
         [shuffledPlayers[i], shuffledPlayers[j]] = [shuffledPlayers[j], shuffledPlayers[i]];
       }
       const shuffledUids = shuffledPlayers.map(p => p.uid);
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         gameStatus: "offline_turn",
         currentRound: roundNumber + 1,
         currentTurnIndex: 0,
@@ -97,7 +95,7 @@ export default function OfflineRoundEndScreen({ route, navigation }) {
     if (loading) return;
     setLoading(true);
     try {
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         gameStatus: "offline_voting",
         votes: {}, // Clear any previous votes
       });

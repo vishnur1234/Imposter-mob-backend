@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Text, TouchableOpacity, SafeAreaView, ScrollView, Alert, ActivityIndicator, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
 
@@ -29,12 +29,11 @@ export default function OfflineVotingScreen({ route, navigation }) {
     );
   };
 
-  // Listen to Firestore for updates and transitions
+  // Listen for updates and transitions
   useEffect(() => {
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
+    const unsub = subscribeToRoom(roomCode, (data) => {
+      if (!data) return;
       setDbRoom(data);
 
       if (data.gameStatus === "offline_result") {
@@ -52,7 +51,7 @@ export default function OfflineVotingScreen({ route, navigation }) {
         });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode]);
 
   const votesObj = dbRoom?.votes || {};
@@ -123,8 +122,7 @@ export default function OfflineVotingScreen({ route, navigation }) {
             updatedScores[p.uid] = (prevScores[p.uid] || 0) + earned;
           });
 
-          // Save to Firestore
-          await updateDoc(doc(db, "rooms", roomCode), {
+          await updateRoom(roomCode, {
             gameStatus: "offline_result",
             tally,
             imposterCaught,
@@ -145,7 +143,7 @@ export default function OfflineVotingScreen({ route, navigation }) {
     }
     setSubmitting(true);
     try {
-      await updateDoc(doc(db, "rooms", roomCode), {
+      await updateRoom(roomCode, {
         [`votes.${currentUid}`]: selected
       });
     } catch (e) {

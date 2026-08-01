@@ -23,9 +23,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { registerForPushNotificationsAsync } from "../services/notificationService";
-import { signOut } from "firebase/auth";
-import { auth, db } from "../firebase/firebase";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { auth } from "../services/authService";
+import { getMyStats, updateMyProfile } from "../services/statsService";
 import { useTheme } from "../context/ThemeContext";
 import Svg, { Path, G } from "react-native-svg";
 
@@ -98,6 +97,17 @@ export default function HomeScreen({ navigation }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const hasAutoNavigated = useRef(false);
 
+  // Start Game CTA micro-interaction values
+  const startBtnScale = useRef(new Animated.Value(1)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+  const pressIn = (animVal, to = 0.96) => {
+    Animated.spring(animVal, { toValue: to, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
+  };
+  const pressOut = (animVal) => {
+    Animated.spring(animVal, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 8 }).start();
+  };
+
   // Pulse animation for the Daily Reward chest
   useEffect(() => {
     let anim;
@@ -148,46 +158,33 @@ export default function HomeScreen({ navigation }) {
     const myUid = auth.currentUser?.uid;
     if (!myUid) return;
 
-    const unsub = onSnapshot(doc(db, "user_stats", myUid), (snap) => {
-      let isClaimable = false;
-      let points = 0;
-      let hasPlayerName = false;
-      let data = null;
-
-      if (snap.exists()) {
-        data = snap.data();
+    const loadStats = () => {
+      getMyStats().then((data) => {
         setStats(data);
         const lastClaimed = data.lastDailyRewardClaimed || 0;
-        isClaimable = Date.now() - lastClaimed >= 24 * 60 * 60 * 1000;
-        points = data.highScore || 0;
-        hasPlayerName = !!data.playerName;
-      } else {
-        isClaimable = true;
-        points = 0;
-      }
+        const isClaimable = Date.now() - lastClaimed >= 24 * 60 * 60 * 1000;
+        const points = data.highScore || 0;
 
-      // Direct instant navigation if 0 points and daily reward is claimable
-      if (points === 0 && isClaimable && !hasAutoNavigated.current) {
-        hasAutoNavigated.current = true;
-        setHasCheckedDailyReward(true);
-        navigation.navigate("DailyReward");
-        return;
-      }
+        // Direct instant navigation if 0 points and daily reward is claimable
+        if (points === 0 && isClaimable && !hasAutoNavigated.current) {
+          hasAutoNavigated.current = true;
+          setHasCheckedDailyReward(true);
+          navigation.navigate("DailyReward");
+          return;
+        }
 
-      if (data) {
         if (!data.playerName) {
           setGamingName(auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Player");
           setShowNameModal(true);
         } else {
           setShowNameModal(false);
         }
-      } else {
-        setGamingName(auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Player");
-        setShowNameModal(true);
-      }
-    });
+      });
+    };
 
-    return () => unsub();
+    loadStats();
+    const unsub = navigation.addListener("focus", loadStats);
+    return unsub;
   }, []);
 
   // Request notifications permission on mount
@@ -230,6 +227,20 @@ export default function HomeScreen({ navigation }) {
         }),
       ])
     ).start();
+
+    // CTA shimmer sweep
+    Animated.loop(
+      Animated.sequence([
+        Animated.delay(1400),
+        Animated.timing(shimmerAnim, {
+          toValue: 1,
+          duration: 1300,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerAnim, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
   const spinOuter = rotateAnim.interpolate({
@@ -257,6 +268,11 @@ export default function HomeScreen({ navigation }) {
   const spinInnerInverse = rotateAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "-360deg"],
+  });
+
+  const shimmerTranslate = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-width * 0.7, width * 0.7],
   });
 
   const outerItems = [
@@ -421,34 +437,70 @@ export default function HomeScreen({ navigation }) {
 
             <View style={styles.menuGroup}>
               <View style={styles.cardsSection}>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate("GameMode")}
-                  activeOpacity={0.92}
-                  style={[styles.modeCard, { borderWidth: 1, borderColor: colors.playBtnBorder, overflow: "hidden" }]}
+                <Animated.View
+                  style={[
+                    styles.ctaGlowWrap,
+                    {
+                      shadowColor: colors.playBtnBorder,
+                      shadowOpacity: colors.isDark ? 0.55 : 0.4,
+                      transform: [{ scale: startBtnScale }],
+                    },
+                  ]}
                 >
-                  <LinearGradient
-                    colors={colors.gradientPlayBtn}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ width: "100%" }}
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("GameMode")}
+                    onPressIn={() => pressIn(startBtnScale, 0.97)}
+                    onPressOut={() => pressOut(startBtnScale)}
+                    activeOpacity={0.94}
+                    style={[styles.modeCard, { borderWidth: 1.5, borderColor: colors.playBtnBorder, overflow: "hidden" }]}
                   >
-                    <View style={[styles.modeCardBody, { justifyContent: "center", gap: 10 }]}>
-                      <PlayCircleIconSvg size={Math.round(22 * scale)} color={colors.playBtnText} />
-                      <Text style={[
-                        styles.modeTitle,
-                        typography.btnPlay,
-                        {
-                          color: colors.playBtnText,
-                          fontSize: Math.round(typography.btnPlay.fontSize * scale),
-                          textAlign: "center",
-                          marginBottom: 0
-                        }
-                      ]}>
-                        Start Game
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
+                    <LinearGradient
+                      colors={colors.gradientPlayBtn}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{ width: "100%" }}
+                    >
+                      {/* Glass highlight sheen across the top half */}
+                      <LinearGradient
+                        pointerEvents="none"
+                        colors={["rgba(255,255,255,0.22)", "rgba(255,255,255,0)"]}
+                        style={styles.ctaSheen}
+                      />
+
+                      {/* Animated shimmer sweep */}
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[styles.ctaShimmer, { transform: [{ translateX: shimmerTranslate }, { rotate: "20deg" }] }]}
+                      >
+                        <LinearGradient
+                          colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.35)", "rgba(255,255,255,0)"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={{ width: "100%", height: "100%" }}
+                        />
+                      </Animated.View>
+
+                      <View style={[styles.modeCardBody, { justifyContent: "center", gap: 10 }]}>
+                        <PlayCircleIconSvg size={Math.round(22 * scale)} color={colors.playBtnText} />
+                        <Text style={[
+                          styles.modeTitle,
+                          typography.btnPlay,
+                          {
+                            color: colors.playBtnText,
+                            fontSize: Math.round(typography.btnPlay.fontSize * scale),
+                            textAlign: "center",
+                            marginBottom: 0,
+                            textShadowColor: "rgba(0,0,0,0.25)",
+                            textShadowOffset: { width: 0, height: 1 },
+                            textShadowRadius: 3,
+                          }
+                        ]}>
+                          Start Game
+                        </Text>
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
               </View>
 
               <View style={styles.statsStrip}>
@@ -570,11 +622,8 @@ export default function HomeScreen({ navigation }) {
                           const myUid = auth.currentUser?.uid;
                           if (!myUid) return;
 
-                          const statsRef = doc(db, "user_stats", myUid);
-                          await setDoc(statsRef, {
-                            playerName: cleanName,
-                            name: cleanName // for standard compatibility
-                          }, { merge: true });
+                          const updated = await updateMyProfile(cleanName);
+                          setStats(updated);
 
                           setShowNameModal(false);
                         } catch (e) {
@@ -885,6 +934,26 @@ const styles = StyleSheet.create({
 
 
   cardsSection: { width: "100%", gap: Math.round(8 * scale) },
+  ctaGlowWrap: {
+    width: "100%",
+    borderRadius: Math.round(12 * scale),
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  ctaSheen: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "60%",
+  },
+  ctaShimmer: {
+    position: "absolute",
+    top: -20,
+    bottom: -20,
+    width: 70,
+  },
   modeCard: {
     width: "100%",
     backgroundColor: "#FFFFFF",

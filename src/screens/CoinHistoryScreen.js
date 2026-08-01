@@ -9,8 +9,8 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, collection, query, orderBy, limit } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { getMyStats, getHistory } from "../services/statsService";
 import { useTheme } from "../context/ThemeContext";
 
 let memoryStatsCache = null;
@@ -25,48 +25,25 @@ export default function CoinHistoryScreen({ navigation }) {
   const myUid = auth.currentUser?.uid;
 
   useEffect(() => {
-
-    const start = performance.now();
     if (!myUid) {
       setLoading(false);
       return;
     }
 
-    const unsubStats = onSnapshot(doc(db, "user_stats", myUid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
+    getMyStats()
+      .then((data) => {
         setStats(data);
         memoryStatsCache = data;
-      }
-    });
+      })
+      .catch((err) => console.error("Error fetching stats:", err));
 
-    const historyQuery = query(
-      collection(db, "user_stats", myUid, "history"),
-      orderBy("timestamp", "desc"),
-      limit(30)
-    );
-
-    const unsubHistory = onSnapshot(historyQuery, (snap) => {
-      const list = [];
-      snap.forEach((d) => {
-        list.push({ id: d.id, ...d.data() });
-      });
-      setHistory(list);
-      memoryHistoryCache = list;
-      setLoading(false);
-      const end = performance.now();
-      // console.log(`History loaded in ${(end - start).toFixed(2)} ms`);
-    }, (err) => {
-      console.error("Error fetching history subcollection:", err);
-      setLoading(false);
-    });
-
-    return () => {
-      unsubStats();
-      unsubHistory();
-    };
-
-
+    getHistory(30)
+      .then((list) => {
+        setHistory(list);
+        memoryHistoryCache = list;
+      })
+      .catch((err) => console.error("Error fetching history:", err))
+      .finally(() => setLoading(false));
   }, [myUid]);
 
 

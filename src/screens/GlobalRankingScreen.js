@@ -14,17 +14,8 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  doc,
-  collection,
-  query,
-  limit,
-  orderBy,
-  onSnapshot,
-  where,
-  getCountFromServer,
-} from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { getRankings } from "../services/statsService";
 import { useTheme } from "../context/ThemeContext";
 import { getPlayerAvatar } from "../services/avatarService";
 
@@ -351,79 +342,22 @@ export default function GlobalRankingScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    let unsubUser = () => { };
-    let unsubRankings = () => { };
-
-    if (myUid !== "guest") {
-      unsubUser = onSnapshot(doc(db, "user_stats", myUid), (snap) => {
-        if (snap.exists()) setUserStats(snap.data());
-      });
-    }
-
-    // Fetch total number of users competing
-    getCountFromServer(collection(db, "user_stats"))
-      .then((countSnap) => {
-        setTotalUsers(countSnap.data().count);
-      })
-      .catch((err) => console.log("Failed to count total users:", err));
-
-    const q = query(collection(db, "user_stats"), orderBy("highScore", "desc"), limit(50));
-    unsubRankings = onSnapshot(
-      q,
-      (snap) => {
-        const rows = [];
-        snap.forEach((d) => {
-          const data = d.data();
-          rows.push({
-            ...data,
-            uid: data.uid || d.id,
-            avatarColor: getAvatarColor((data.uid || d.id) + (data.name || "")),
-          });
-        });
-        setRankings(rows);
+    getRankings(50)
+      .then(({ rankings: top, totalUsers: total, myRank, me }) => {
+        setRankings(
+          top.map((p) => ({ ...p, avatarColor: getAvatarColor(p.uid + (p.name || "")) }))
+        );
+        setTotalUsers(total);
+        setUserStats(me);
+        setMyPreciseRank(myUid !== "guest" ? myRank : 0);
         setLoading(false);
         Animated.timing(listFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-      },
-      (err) => {
+      })
+      .catch((err) => {
         console.error("Rankings error:", err);
         setLoading(false);
-      }
-    );
-
-    return () => {
-      unsubUser();
-      unsubRankings();
-    };
+      });
   }, [myUid]);
-
-  // Dynamically calculate precise global rank
-  useEffect(() => {
-    if (myUid === "guest") {
-      setMyPreciseRank(0);
-      return;
-    }
-
-    const myRankIndex = rankings.findIndex((p) => p.uid === myUid);
-    if (myRankIndex !== -1) {
-      setMyPreciseRank(myRankIndex + 1);
-    } else if (userStats) {
-      const myScore = userStats.highScore || 0;
-      const rankQuery = query(
-        collection(db, "user_stats"),
-        where("highScore", ">", myScore)
-      );
-      getCountFromServer(rankQuery)
-        .then((countSnap) => {
-          setMyPreciseRank(countSnap.data().count + 1);
-        })
-        .catch((err) => {
-          console.error("Failed to query exact rank count:", err);
-          setMyPreciseRank(0);
-        });
-    } else {
-      setMyPreciseRank(0);
-    }
-  }, [rankings, userStats, myUid]);
 
   const t = useMemo(() => {
     const isDark = colors.isDark;

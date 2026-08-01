@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
 import { useTheme } from "../context/ThemeContext";
 import { joinRoomAtomic } from "../services/roomService";
 

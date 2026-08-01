@@ -5,12 +5,12 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { auth } from "../firebase/firebase";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 
 export default function RegisterScreen({ navigation }) {
   const { colors, typography } = useTheme();
+  const { register } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export default function RegisterScreen({ navigation }) {
     }
     setLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await register(email.trim(), password);
       Alert.alert("Success", "Account created!", [
         { text: "OK", onPress: () => navigation.navigate("Login") },
       ]);

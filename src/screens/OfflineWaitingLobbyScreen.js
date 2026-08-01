@@ -6,8 +6,9 @@ import {
 import QRCode from "react-native-qrcode-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot, updateDoc, getDoc } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { getUserStatsById } from "../services/statsService";
+import { subscribeToRoom, updateRoom } from "../services/roomService";
 import { generateTopic } from "../services/generateTopic";
 import { useTheme } from "../context/ThemeContext";
 import { getAvatarByIndex } from "../services/avatarService";
@@ -45,16 +46,16 @@ export default function OfflineWaitingLobbyScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!roomCode) return;
-    const unsub = onSnapshot(doc(db, "rooms", roomCode), async (snap) => {
-      if (!snap.exists()) { Alert.alert("Room Closed", "The room was closed."); navigation.navigate("Home"); return; }
-      const data = snap.data();
+    const unsub = subscribeToRoom(roomCode, async (data) => {
+      if (!data) { Alert.alert("Room Closed", "The room was closed."); navigation.navigate("Home"); return; }
       setDbRoom(data);
       const playersList = data.players || [];
       const enriched = await Promise.all(
         playersList.map(async (p) => {
           try {
-            const statSnap = await getDoc(doc(db, "user_stats", p.uid));
-            if (statSnap.exists()) { const sd = statSnap.data(); const gTag = sd.playerName || sd.name; if (gTag) return { ...p, name: gTag }; }
+            const sd = await getUserStatsById(p.uid);
+            const gTag = sd.playerName || sd.name;
+            if (gTag) return { ...p, name: gTag };
           } catch (_) { }
           return p;
         })
@@ -74,7 +75,7 @@ export default function OfflineWaitingLobbyScreen({ route, navigation }) {
         });
       }
     });
-    return () => unsub();
+    return unsub;
   }, [roomCode]);
 
   const handleStart = async () => {
@@ -87,7 +88,7 @@ export default function OfflineWaitingLobbyScreen({ route, navigation }) {
         topic = await generateTopic(topic.category || topic.id.replace("random_", ""));
       }
       const imposterIndex = Math.floor(Math.random() * joinedPlayers.length);
-      await updateDoc(doc(db, "rooms", roomCode), { gameStatus: "offline_reveal", topic, imposterIndex, startedAt: Date.now() });
+      await updateRoom(roomCode, { gameStatus: "offline_reveal", topic, imposterIndex, startedAt: Date.now() });
     } catch (e) { Alert.alert("Error", `Failed to start: ${e.message}`); }
     finally { setStarting(false); }
   };

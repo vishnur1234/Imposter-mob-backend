@@ -6,8 +6,8 @@ import {
 import topics from "../data/demoData";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db, auth } from "../firebase/firebase";
+import { auth } from "../services/authService";
+import { getMyStats } from "../services/statsService";
 import { useTheme } from "../context/ThemeContext";
 import { createRoomAtomic } from "../services/roomService";
 
@@ -34,16 +34,12 @@ export default function CreateRoomScreen({ navigation }) {
   useEffect(() => {
     const myUid = auth.currentUser?.uid;
     if (!myUid) return;
-    const unsub = onSnapshot(doc(db, "user_stats", myUid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
+    getMyStats()
+      .then((data) => {
         setUserCoins(data.highScore || 0);
-        setHostPlayerName(data.playerName || data.name || (auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Host"));
-      } else {
-        setHostPlayerName(auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Host");
-      }
-    });
-    return () => unsub();
+        setHostPlayerName(data.playerName || (auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Host"));
+      })
+      .catch(() => setHostPlayerName(auth.currentUser?.email ? auth.currentUser.email.split("@")[0] : "Host"));
   }, []);
 
 
