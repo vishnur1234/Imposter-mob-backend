@@ -22,6 +22,10 @@ app.use("/api/users", userRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/games", gameRoutes);
 
+app.get("/", (req, res) =>
+  res.status(200).json({ success: true, message: "Imposter Game API is running. See /api/health." })
+);
+
 app.get("/api/health", (req, res) => res.status(200).json({ success: true, data: "ok" }));
 
 app.use(notFound);
