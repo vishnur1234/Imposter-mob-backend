@@ -6,7 +6,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 //   "localhost"/"10.0.2.2" only work from a simulator/emulator on this machine.
 // - Production: the public URL of your deployed backend, e.g.
 //   https://imposter-mob-backend.onrender.com
-const BASE = process.env.EXPO_PUBLIC_API_URL;
+const BASE =
+  process.env.EXPO_PUBLIC_API_URL || "https://imposter-mob-backend.onrender.com";
 if (!BASE) {
   throw new Error(
     "EXPO_PUBLIC_API_URL is not set — add it to .env (see .env.example) and restart Metro."
