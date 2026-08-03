@@ -24,7 +24,9 @@ const roomSchema = new mongoose.Schema(
     bettingAmount: { type: Number, default: 50 },
     gameMode: { type: String, default: "classic" },
     category: { type: String, default: null },
-    selectedTopic: { type: String, default: null },
+    // Holds a whole topic object ({ id, category, answer }), not a plain string —
+    // Mixed lets it store that shape instead of Mongoose casting it to a string.
+    selectedTopic: { type: mongoose.Schema.Types.Mixed, default: null },
     totalRounds: { type: Number, default: 3 },
     clueTimer: { type: Number, default: 0 },
   },
