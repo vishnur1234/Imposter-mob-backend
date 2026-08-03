@@ -1,13 +1,20 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Your computer's LAN IP. A physical phone on the same Wi-Fi can only reach
-// your backend through this — "localhost" or "10.0.2.2" only work from a
-// simulator/emulator running on this same machine, never from a real device.
-// Find yours with:  ifconfig | grep "inet " | grep -v 127.0.0.1
-// Update this whenever it changes (new Wi-Fi network, router reassigns it, etc.).
-const HOST = "192.168.1.7";
-export const API_BASE_URL = `http://${HOST}:5050/api`;
-export const SOCKET_URL = `http://${HOST}:5050`;
+// Set in .env as EXPO_PUBLIC_API_URL (baked into the app at build time by Expo).
+// - Local dev: your computer's LAN IP, e.g. http://192.168.1.7:5050 — a physical
+//   phone on the same Wi-Fi can only reach your backend through this;
+//   "localhost"/"10.0.2.2" only work from a simulator/emulator on this machine.
+// - Production: the public URL of your deployed backend, e.g.
+//   https://imposter-mob-backend.onrender.com
+const BASE = process.env.EXPO_PUBLIC_API_URL;
+if (!BASE) {
+  throw new Error(
+    "EXPO_PUBLIC_API_URL is not set — add it to .env (see .env.example) and restart Metro."
+  );
+}
+
+export const API_BASE_URL = `${BASE}/api`;
+export const SOCKET_URL = BASE;
 
 const TOKEN_KEY = "auth_token";
 let cachedToken = null;
