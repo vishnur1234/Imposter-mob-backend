@@ -1,11 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
 
-// Demo backend URL. Android emulators can't reach "localhost" (that's the
-// emulator itself), so they use the special 10.0.2.2 alias back to the host
-// machine; iOS simulator and web can use localhost directly. For a physical
-// device, replace this with your machine's LAN IP (e.g. http://192.168.1.20:5050).
-const HOST = Platform.OS === "android" ? "10.0.2.2" : "localhost";
+// Your computer's LAN IP. A physical phone on the same Wi-Fi can only reach
+// your backend through this — "localhost" or "10.0.2.2" only work from a
+// simulator/emulator running on this same machine, never from a real device.
+// Find yours with:  ifconfig | grep "inet " | grep -v 127.0.0.1
+// Update this whenever it changes (new Wi-Fi network, router reassigns it, etc.).
+const HOST = "192.168.1.7";
 export const API_BASE_URL = `http://${HOST}:5050/api`;
 export const SOCKET_URL = `http://${HOST}:5050`;
 
